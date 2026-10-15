@@ -26,7 +26,7 @@ LOGIT_FEATURES = list(logit_model.feature_names_in_)
 LINREG_FEATURES = list(linear_model.feature_names_in_)
 
 # Test-set results from the notebook
-RECALL, PRECISION, ACCURACY, AUC = 0.68, 0.36, 0.76, 0.80
+RECALL = 0.68
 R2, MAE = 0.94, 890
 LOW_CUT, HIGH_CUT = 0.30, 0.60   # risk bands
 
@@ -120,19 +120,6 @@ def explain(employee):
     return pd.DataFrame(rows, columns=['Factor', 'Value', 'Effect']).sort_values('Effect', ascending=False)
 
 
-def readable(name):
-    """'BusinessTravel_Travel_Frequently' -> 'Business travel: Travels frequently'"""
-    for f in LOGIT_FEATURES:
-        if name == f:
-            return FRIENDLY[f]
-        if name.startswith(f + '_'):
-            level = name[len(f) + 1:]
-            if f == 'OverTime':
-                return 'Works overtime'
-            return f"{FRIENDLY[f]}: {TRAVEL.get(level, level)}"
-    return name
-
-
 def effect_chart(df):
     df = df.copy()
     df['Label'] = df['Factor'] + ' (' + df['Value'] + ')'
@@ -167,7 +154,7 @@ with st.sidebar:
                "never as the only basis for a decision about a person.")
 
 st.title("Employee Retention Assistant")
-tab1, tab2, tab3 = st.tabs(["🔍 Check an employee", "💰 Salary benchmark", "📊 How the model works"])
+tab1, tab2 = st.tabs(["🔍 Check an employee", "💰 Salary benchmark"])
 
 # ---------------------------------------------------------------------------
 # TAB 1: Attrition risk + fair pay for one employee
@@ -342,49 +329,3 @@ with tab2:
         m3.metric("Upper end", f"{pay + MAE:,.0f}")
         st.caption(f"The model explains {R2:.0%} of the differences in pay at ABC Ltd. Job level and role "
                    "matter most; experience adds a little; education and performance rating barely change pay.")
-
-# ---------------------------------------------------------------------------
-# TAB 3: Transparency
-# ---------------------------------------------------------------------------
-with tab3:
-    st.subheader("What drives attrition at ABC Ltd?")
-    st.write("These are the patterns the attrition model learned from past employees. "
-             "Orange factors were common among people who left; blue among people who stayed.")
-
-    prep = logit_model.named_steps['prep']
-    names = [readable(n.split('__', 1)[1]) for n in prep.get_feature_names_out()]
-    coefs = pd.DataFrame({'Factor': names, 'Effect': logit_model.named_steps['model'].coef_[0]})
-    coefs = coefs.reindex(coefs['Effect'].abs().sort_values(ascending=False).index).head(15)
-    coefs['Direction'] = np.where(coefs['Effect'] > 0, 'Raises risk', 'Lowers risk')
-    chart = (alt.Chart(coefs).mark_bar(cornerRadius=3, height=16)
-             .encode(x=alt.X('Effect:Q', title='← lowers risk          raises risk →'),
-                     y=alt.Y('Factor:N', sort='-x', title=None),
-                     color=alt.Color('Direction:N', scale=alt.Scale(domain=['Raises risk', 'Lowers risk'],
-                                                                    range=[ORANGE, BLUE]),
-                                     legend=alt.Legend(orient='top', title=None)),
-                     tooltip=['Factor', alt.Tooltip('Effect:Q', format='+.2f')])
-             .properties(height=420))
-    st.altair_chart(chart, width='stretch')
-    st.caption("Job roles are compared with Healthcare Representatives; travel with 'Does not travel'; "
-               "marital status with 'Divorced'. Numeric factors show the effect of a higher-than-average value.")
-
-    st.subheader("How well does it work?")
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Leavers caught", f"{RECALL:.0%}", help="Of employees who actually left, the share the model flagged.")
-    k2.metric("Flags that were right", f"{PRECISION:.0%}", help="Of employees flagged as likely to leave, the share who actually left.")
-    k3.metric("Overall accuracy", f"{ACCURACY:.0%}")
-    k4.metric("Salary model fit (R²)", f"{R2:.2f}")
-    st.write("Tested on 294 employees the model had never seen. The model is tuned to **catch more leavers** "
-             "at the cost of some false alarms, because a check-in conversation with someone who wasn't going "
-             "to leave costs much less than losing a good employee.")
-
-    st.subheader("Limitations")
-    st.markdown(
-        "- It finds **patterns, not causes**. Overtime being linked to leaving doesn't prove overtime causes it.\n"
-        "- It only knows what is in the HR data. It can't see a job offer from a competitor, a family move, "
-        "or a conflict with a colleague. **You** often know these things.\n"
-        "- The risk score is a ranking aid, not an exact probability.\n"
-        "- Trained on 1,470 past employees; unusual profiles (e.g. a role at a level that has never existed) "
-        "get less reliable predictions.\n"
-        "- Gender is deliberately **not** used.")
-    st.caption("Models: logistic regression (attrition) and linear regression (salary), built with scikit-learn.")
